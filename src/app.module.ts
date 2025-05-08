@@ -1,10 +1,27 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
+import { PrivyModule } from './infrastracture/privy/privy.module';
+import { PrivyModuleOptions } from './infrastracture/privy/types/privy.types';
+import { IotDataModule } from './modules/iot-data/iot-data.module';
 
 @Module({
-  imports: [],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    AuthModule,
+    UsersModule,
+    IotDataModule,
+    PrivyModule.registerAsync({
+      useFactory: async (
+        configService: ConfigService,
+      ): Promise<PrivyModuleOptions> => ({
+        applicationId: configService.get<string>('PRIVY_APP_ID') || '',
+        secret: configService.get<string>('PRIVY_SECRET') || '',
+      }),
+      inject: [ConfigService],
+    }),
+  ],
 })
 export class AppModule {}
+

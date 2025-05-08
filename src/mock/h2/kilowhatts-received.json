@@ -1,0 +1,17 @@
+[
+    {
+      "organizationId": "org-001",
+      "organizationName": "Green Energy Co.",
+      "burnedKwts": 1200
+    },
+    {
+      "organizationId": "org-002",
+      "organizationName": "HydroFuture Inc.",
+      "burnedKwts": 800
+    },
+    {
+      "organizationId": "org-003",
+      "organizationName": "Solaris Ltd.",
+      "burnedKwts": 1500
+    }
+]
