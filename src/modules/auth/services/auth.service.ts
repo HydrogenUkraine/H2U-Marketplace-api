@@ -139,13 +139,21 @@ export class AuthService {
       const user = await this.userService.create(userCreateDto);
 
       if(!user.walletAddress){
-        // await this.privyService.client.createWallets({
-        //   userId: user.privyId,
-        //   createEthereumWallet: false,
-        //   createSolanaWallet: true,
-        //   createEthereumSmartWallet: false,
-        //   numberOfEthereumWalletsToCreate: 1,
-        // });
+        const walletResponse = await this.privyService.client.createWallets({
+          userId: user.privyId,
+          createEthereumWallet: false,
+          createSolanaWallet: true,
+          createEthereumSmartWallet: false,
+        });
+
+        const walletAddress = walletResponse.wallet?.address;
+
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            walletAddress: walletAddress,
+          },
+        });
       }
 
       const newSessionId = sessionId || crypto.randomUUID();

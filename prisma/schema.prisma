@@ -18,6 +18,7 @@ model User {
   walletAddress   String?
   organization    UserOrganization? // one-to-one
   session           Session?
+  canisters       Canister[]
 }
 
 model Organization {
@@ -40,4 +41,30 @@ model Session {
   expiresAt DateTime
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id])
+}
+
+model Canister {
+  id              String    @id @default(uuid())
+  publicKey       String    @unique
+  producerPda     String
+  userId         String
+  tokenMint       String
+  totalAmount     BigInt
+  availableAmount BigInt
+  user            User      @relation(fields: [userId], references: [id])
+  listings        Listing[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Listing {
+  id                String   @id @default(uuid())
+  publicKey         String   @unique
+  canisterId        String
+  price             Float
+  amount            BigInt
+  transferManagerAta String
+  canister          Canister @relation(fields: [canisterId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }

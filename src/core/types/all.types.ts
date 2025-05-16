@@ -12,3 +12,16 @@ export interface Organization {
   id: string;
   name: string;
 }
+
+export interface Listing {
+  publicKey: string;
+  canisterPublicKey: string;
+  price: number;
+  amount: number;
+  transferManagerAta: string;
+  producer: string;
+  tokenMint: string;
+  batchId: string;
+  productionDate: string;
+  eacMint: string;
+}

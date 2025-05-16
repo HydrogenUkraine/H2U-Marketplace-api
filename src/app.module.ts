@@ -5,6 +5,7 @@ import { UsersModule } from './modules/users/users.module';
 import { PrivyModule } from './infrastracture/privy/privy.module';
 import { PrivyModuleOptions } from './infrastracture/privy/types/privy.types';
 import { IotDataModule } from './modules/iot-data/iot-data.module';
+import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { IotDataModule } from './modules/iot-data/iot-data.module';
     AuthModule,
     UsersModule,
     IotDataModule,
+    MarketplaceModule,
     PrivyModule.registerAsync({
       useFactory: async (
         configService: ConfigService,
