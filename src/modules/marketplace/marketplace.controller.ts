@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Body, Param, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { MarketplaceService } from './marketplace.service';
 import { Listing } from 'src/core/types/all.types';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 interface PlaceBidDto {
   listingPublicKey: string;
@@ -10,6 +11,7 @@ interface PlaceBidDto {
 
 
 @Controller('api/marketplace')
+@UseGuards(JwtAuthGuard)
 export class MarketplaceController {
   constructor(private readonly marketplaceService: MarketplaceService) {}
 

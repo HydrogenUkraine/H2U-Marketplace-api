@@ -6,6 +6,7 @@ import { PrismaService } from 'src/infrastracture/prisma/prisma.service';
 import { Hydrogen } from 'src/core/types/contracts/hydrogen';
 import { Marketplace } from 'src/core/types/contracts/marketplace';
 import { format } from 'util';
+import { OracleService } from '../oracle/oracle.service';
 
 const TOKEN_METADATA_PROGRAM_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
 
@@ -37,6 +38,8 @@ export class MarketplaceService {
   private readonly marketplace: anchor.Program<Marketplace>;
   private readonly provider: anchor.AnchorProvider;
   private readonly adminWallet: Keypair;
+  @Inject()
+  private readonly oracleService: OracleService;
 
   constructor(private readonly prisma: PrismaService) {
     // Initialize Solana provider
@@ -140,6 +143,10 @@ export class MarketplaceService {
       // Validate inputs
       if (amount <= 0 || offeredPrice <= 0) {
         throw new Error("Amount and offered price must be positive");
+      }
+      const { minPricePerKg, maxPricePerKg } = await this.oracleService.getOraclePrice();
+      if(offeredPrice < minPricePerKg || offeredPrice > maxPricePerKg){
+        throw new BadRequestException("Offered price: " + offeredPrice + " was rejected by oracle. Valid price range per kg: " + minPricePerKg + " - " + maxPricePerKg);
       }
 
       // Convert inputs to u64 (SOL and amounts are in whole units for the instruction)

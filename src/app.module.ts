@@ -6,6 +6,7 @@ import { PrivyModule } from './infrastracture/privy/privy.module';
 import { PrivyModuleOptions } from './infrastracture/privy/types/privy.types';
 import { IotDataModule } from './modules/iot-data/iot-data.module';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module';
+import { OracleModule } from './modules/oracle/oracle.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { MarketplaceModule } from './modules/marketplace/marketplace.module';
     UsersModule,
     IotDataModule,
     MarketplaceModule,
+    OracleModule,
     PrivyModule.registerAsync({
       useFactory: async (
         configService: ConfigService,
