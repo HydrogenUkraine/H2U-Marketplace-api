@@ -143,6 +143,16 @@ export type Marketplace = {
           "isSigner": false
         },
         {
+          "name": "buyerUsdcAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "producerUsdcAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
           "name": "tokenProgram",
           "isMut": false,
           "isSigner": false
@@ -366,6 +376,16 @@ export const IDL: Marketplace = {
         },
         {
           "name": "producer",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "buyerUsdcAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "producerUsdcAta",
           "isMut": true,
           "isSigner": false
         },

@@ -143,6 +143,16 @@
           "isSigner": false
         },
         {
+          "name": "buyerUsdcAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "producerUsdcAta",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
           "name": "tokenProgram",
           "isMut": false,
           "isSigner": false
@@ -224,6 +234,6 @@
     }
   ],
   "metadata": {
-    "address": "D71KM5MFFzpWs4ky1LAfAiNTtVWNGhTNB6MkM8pwiHRr"
+    "address": "2tXBiHkHxsPFbh7RjJwxdZC2eFupBATaZ1GdE1ngadaM"
   }
 }

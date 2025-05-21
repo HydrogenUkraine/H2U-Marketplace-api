@@ -417,8 +417,8 @@ export type Hydrogen = {
   "errors": [
     {
       "code": 6000,
-      "name": "NameTooLong",
-      "msg": "The provided name is too long. Max 64 characters."
+      "name": "Unauthorized",
+      "msg": "You are not authorized to update this PDA."
     }
   ]
 };
@@ -842,8 +842,8 @@ export const IDL: Hydrogen = {
   "errors": [
     {
       "code": 6000,
-      "name": "NameTooLong",
-      "msg": "The provided name is too long. Max 64 characters."
+      "name": "Unauthorized",
+      "msg": "You are not authorized to update this PDA."
     }
   ]
 };

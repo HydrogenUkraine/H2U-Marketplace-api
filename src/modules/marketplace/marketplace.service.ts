@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import * as anchor from '@coral-xyz/anchor';
 import { Keypair, PublicKey, SystemProgram, ComputeBudgetProgram, LAMPORTS_PER_SOL} from '@solana/web3.js';
-import { createMint, getAssociatedTokenAddress, getOrCreateAssociatedTokenAccount, getAccount, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { createMint, getAssociatedTokenAddress, getOrCreateAssociatedTokenAccount, getAccount, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createInitializeMintInstruction } from '@solana/spl-token';
 import { PrismaService } from 'src/infrastracture/prisma/prisma.service';
 import { Hydrogen } from 'src/core/types/contracts/hydrogen';
 import { Marketplace } from 'src/core/types/contracts/marketplace';
@@ -9,6 +9,8 @@ import { format } from 'util';
 import { OracleService } from '../oracle/oracle.service';
 
 const TOKEN_METADATA_PROGRAM_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+const USDC_MINT_DEVNET = new PublicKey('Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr'); // Devnet USDC mint
+const USDC_DECIMALS = 6; // USDC has 6 decimals
 
 // Interface for canister objects
 interface Canister {
@@ -77,7 +79,7 @@ export class MarketplaceService {
   // Mock IoT data: batches of EAC certificates
   private generateMockIoTData(): { batchId: string; burnedKwh: number }[] {
     return Array.from({ length: 8 }, (_, i) => ({
-      batchId: `batch-${i+17}`, // increment for unique batch id
+      batchId: `batch-${i+1}`, // increment for unique batch id
       burnedKwh: Math.floor(Math.random() * 900) + 100, // 100–1000 kWh
     }));
   }
@@ -96,6 +98,12 @@ export class MarketplaceService {
         })
         .signers([producerAuthority])
         .transaction();
+
+      const blockhash = await this.provider.connection.getLatestBlockhash('confirmed');
+      const blockheight =  blockhash.lastValidBlockHeight;
+
+      tx.recentBlockhash = blockhash.blockhash;
+      tx.lastValidBlockHeight = blockheight;
 
       tx.add(modifyComputeUnits);
       tx.add(addPriorityFee);
@@ -125,6 +133,12 @@ export class MarketplaceService {
             })
             .transaction();
 
+        const blockhash = await this.provider.connection.getLatestBlockhash('confirmed');
+        const blockheight =  blockhash.lastValidBlockHeight;
+
+        tx.recentBlockhash = blockhash.blockhash;
+        tx.lastValidBlockHeight = blockheight;
+
         tx.add(modifyComputeUnits);
         tx.add(addPriorityFee);
 
@@ -145,13 +159,14 @@ export class MarketplaceService {
         throw new Error("Amount and offered price must be positive");
       }
       const { minPricePerKg, maxPricePerKg } = await this.oracleService.getOraclePrice();
-      if(offeredPrice < minPricePerKg || offeredPrice > maxPricePerKg){
+      console.log(`Oracle Price Range - min: ${minPricePerKg}, max: ${maxPricePerKg}, offered: ${offeredPrice}`);      if(offeredPrice < minPricePerKg || offeredPrice > maxPricePerKg){
         throw new BadRequestException("Offered price: " + offeredPrice + " was rejected by oracle. Valid price range per kg: " + minPricePerKg + " - " + maxPricePerKg);
       }
 
       // Convert inputs to u64 (SOL and amounts are in whole units for the instruction)
       const amountU64 = Math.floor(amount); // Ensure integer kg
       const offeredPriceU64 = Math.floor(offeredPrice); // Ensure integer SOL/kg
+      console.log(`Converted - amountU64: ${amountU64}, offeredPriceU64: ${offeredPriceU64}`);
 
       // Fetch the listing account
       const listingAccount = await this.marketplace.account.listing.fetch(new PublicKey(listingPublicKey));
@@ -175,12 +190,54 @@ export class MarketplaceService {
         this.adminWallet.publicKey, // Owner
         true // Allow owner off-curve
       );
+      console.log("buyerAta = ", buyerAta);
+
+      // Get or create USDC ATAs for buyer and producer
+      const buyerUsdcAta = await getOrCreateAssociatedTokenAccount(
+        this.provider.connection,
+        this.adminWallet, // Payer
+        USDC_MINT_DEVNET, // USDC mint
+        this.adminWallet.publicKey, // Owner
+        true // Allow owner off-curve
+      );
+
+      console.log("h2Canister.producerPubkey = ", h2Canister.producerPubkey);
+
+      const producerUsdcAta = await getOrCreateAssociatedTokenAccount(
+        this.provider.connection,
+        this.adminWallet, // Payer
+        USDC_MINT_DEVNET, // USDC mint
+        h2Canister.producerPubkey, // Producer (owner of the USDC ATA)
+        true // Allow owner off-curve
+      );
 
       // Check SOL balance
-      const totalPayment = amountU64 * offeredPriceU64;
-      const balance = await this.provider.connection.getBalance(this.adminWallet.publicKey);
-      if (balance < totalPayment) {
-        throw new Error(`Insufficient SOL balance: ${balance} lamports available, ${totalPayment} required`);
+      //const totalPayment = amountU64 * offeredPriceU64;
+      // const balance = await this.provider.connection.getBalance(this.adminWallet.publicKey);
+      // if (balance < totalPayment) {
+      //   throw new Error(`Insufficient SOL balance: ${balance} lamports available, ${totalPayment} required`);
+      // }
+      // Check USDC balance
+      const totalPaymentHumanReadable = amountU64 * offeredPriceU64; // Total payment in human-readable USDC units
+      const totalPaymentSmallestUnits = totalPaymentHumanReadable * 10 ** USDC_DECIMALS; // Convert to smallest units for balance check
+      console.log(`Payment Calculation - totalHumanReadable: ${totalPaymentHumanReadable}, totalSmallestUnits: ${totalPaymentSmallestUnits}`);
+      let buyerUsdcBalance: bigint;
+      try {
+        const buyerUsdcAccount = await getAccount(this.provider.connection, buyerUsdcAta.address);
+        buyerUsdcBalance = buyerUsdcAccount.amount;
+        console.log(`Buyer USDC Balance: ${Number(buyerUsdcBalance) / 10 ** USDC_DECIMALS} USDC`);
+      } catch (error) {
+        console.error(`Failed to fetch buyer USDC balance: ${error.message}`);
+        throw new BadRequestException(`Failed to fetch buyer's USDC balance: ${error.message}`);
+      }
+
+      if (buyerUsdcBalance < BigInt(totalPaymentSmallestUnits)) {
+        console.log(`Insufficient Balance - Required: ${totalPaymentSmallestUnits / 10 ** USDC_DECIMALS} USDC, Available: ${Number(buyerUsdcBalance) / 10 ** USDC_DECIMALS} USDC`);
+        throw new BadRequestException(
+          `Insufficient USDC balance: ${Number(buyerUsdcBalance) / 10 ** USDC_DECIMALS} USDC available, ${
+            totalPaymentSmallestUnits / 10 ** USDC_DECIMALS
+          } USDC required`
+        );
       }
 
       // Define compute unit and priority fee instructions
@@ -190,6 +247,8 @@ export class MarketplaceService {
       const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({
         microLamports: 100_000, // 0.1 micro-lamports per compute unit
       });
+
+      console.log("seelling tokens ...");
 
       // Build transaction
       const tx = await this.marketplace.methods
@@ -202,6 +261,8 @@ export class MarketplaceService {
           transferManagerAta: listingAccount.transferManagerAta,
           buyerAta: buyerAta.address,
           producer: this.adminWallet.publicKey,
+          buyerUsdcAta: buyerUsdcAta.address,
+          producerUsdcAta: producerUsdcAta.address,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
@@ -291,6 +352,7 @@ export class MarketplaceService {
 
       return updatedListing;
     } catch (error) {
+      console.error(`Failed to place bid for listing ${listingPublicKey}: ${error}`);
       console.error(`Failed to place bid for listing ${listingPublicKey}: ${error.message}`);
       throw new Error(`Failed to place bid: ${error.message}`);
     }
@@ -439,13 +501,73 @@ export class MarketplaceService {
     } catch (error) {
       console.log(`EAC for ${batch.batchId} does not exist, initializing...`);
       try {
-        eacMint = await createMint(
-          this.provider.connection,
-          this.adminWallet,
-          producerAuthority.publicKey,
-          producerAuthority.publicKey,
-          9
+        // eacMint = await createMint(
+        //   this.provider.connection,
+        //   this.adminWallet,
+        //   producerAuthority.publicKey,
+        //   producerAuthority.publicKey,
+        //   9
+        // );
+        // Manually create the mint transaction
+        const mintKeypair = Keypair.generate();
+        eacMint = mintKeypair.publicKey;
+
+        const lamportsForMint = await this.provider.connection.getMinimumBalanceForRentExemption(82); // Mint account size
+
+        const createMintTx = new anchor.web3.Transaction().add(
+          // Create account for the mint
+          SystemProgram.createAccount({
+            fromPubkey: this.adminWallet.publicKey,
+            newAccountPubkey: eacMint,
+            space: 82, // Size of a mint account
+            lamports: lamportsForMint,
+            programId: TOKEN_PROGRAM_ID,
+          }),
+          // Initialize the mint
+          createInitializeMintInstruction(
+            eacMint,
+            9, // Decimals
+            producerAuthority.publicKey, // Mint authority
+            producerAuthority.publicKey, // Freeze authority
+            //TOKEN_PROGRAM_ID
+          )
         );
+
+        // Add compute budget and priority fee
+        const modifyComputeUnitsMint = ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 });
+        const addPriorityFeeMint = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 });
+
+        // Retry logic for createMintTx
+        let mintSignature: string | null = null;
+        const maxAttempts = 3;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const { blockhash, lastValidBlockHeight } = await this.provider.connection.getLatestBlockhash('confirmed');
+            createMintTx.recentBlockhash = blockhash;
+            createMintTx.lastValidBlockHeight = lastValidBlockHeight;
+
+            createMintTx.add(modifyComputeUnitsMint);
+            createMintTx.add(addPriorityFeeMint);
+
+            mintSignature = await this.provider.sendAndConfirm(createMintTx, [this.adminWallet, mintKeypair], {
+              commitment: 'confirmed',
+              maxRetries: 3,
+            });
+            console.log(`Mint created for EAC ${batch.batchId}: ${mintSignature}`);
+            break;
+          } catch (sendError: any) {
+            if (sendError.message.includes('block height exceeded') && attempt < maxAttempts) {
+              console.log(`Block height exceeded on createMint attempt ${attempt}, retrying...`);
+              continue;
+            }
+            throw sendError;
+          }
+        }
+
+        if (!mintSignature) {
+          throw new Error(`Failed to create mint for EAC ${batch.batchId} after ${maxAttempts} attempts`);
+        }
+
         const [metadataPda] = PublicKey.findProgramAddressSync(
           [Buffer.from('metadata'), TOKEN_METADATA_PROGRAM_ID.toBuffer(), eacMint.toBuffer()],
           TOKEN_METADATA_PROGRAM_ID
@@ -485,11 +607,10 @@ export class MarketplaceService {
           .signers([producerAuthority])
           .transaction();
 
-          const blockhash = await this.provider.connection.getLatestBlockhash('confirmed');
-          const blockheight =  blockhash.lastValidBlockHeight;
+        const { blockhash, lastValidBlockHeight } = await this.provider.connection.getLatestBlockhash('confirmed');
+        tx.recentBlockhash = blockhash;
+        tx.lastValidBlockHeight = lastValidBlockHeight;
 
-        tx.recentBlockhash = blockhash.blockhash;
-        tx.lastValidBlockHeight = blockheight;
         tx.add(modifyComputeUnits);
         tx.add(addPriorityFee);
 
@@ -497,6 +618,38 @@ export class MarketplaceService {
           commitment: 'confirmed',
           maxRetries: 3,
         });
+
+        // Retry logic for block height exceeded
+        // let signature: string | null = null;
+        // const maxAttempts = 3;
+        // for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        //   try {
+        //     // Fetch the latest blockhash immediately before submission
+        //     const { blockhash, lastValidBlockHeight } = await this.provider.connection.getLatestBlockhash('confirmed');
+        //     tx.recentBlockhash = blockhash;
+        //     tx.lastValidBlockHeight = lastValidBlockHeight;
+
+        //     tx.add(modifyComputeUnits);
+        //     tx.add(addPriorityFee);
+
+        //     signature = await this.provider.sendAndConfirm(tx, [producerAuthority], {
+        //       commitment: 'confirmed',
+        //       maxRetries: 3,
+        //     });
+        //     break; // Success, exit the retry loop
+        //   } catch (sendError: any) {
+        //     if (sendError.message.includes('block height exceeded') && attempt < maxAttempts) {
+        //       console.log(`Block height exceeded on attempt ${attempt}, retrying...`);
+        //       continue;
+        //     }
+        //     throw sendError; // Rethrow if not a block height error or max attempts reached
+        //   }
+        // }
+
+        // if (!signature) {
+        //   throw new Error(`Failed to initialize EAC for ${batch.batchId} after ${maxAttempts} attempts`);
+        // }
+
         console.log(`EAC initialized for ${batch.batchId}: ${signature}`);
         eacInitialized = true;
       } catch (initError) {
@@ -562,6 +715,12 @@ export class MarketplaceService {
           })
           .signers([producerAuthority])
           .transaction();
+        
+        const blockhash = await this.provider.connection.getLatestBlockhash('confirmed');
+        const blockheight =  blockhash.lastValidBlockHeight;
+
+        tx.recentBlockhash = blockhash.blockhash;
+        tx.lastValidBlockHeight = blockheight;
 
         tx.add(modifyComputeUnits);
         tx.add(addPriorityFee);
@@ -602,6 +761,12 @@ export class MarketplaceService {
           })
           .signers([producerAuthority])
           .transaction();
+
+        const blockhash = await this.provider.connection.getLatestBlockhash('confirmed');
+        const blockheight =  blockhash.lastValidBlockHeight;
+
+        tx.recentBlockhash = blockhash.blockhash;
+        tx.lastValidBlockHeight = blockheight;
 
         tx.add(modifyComputeUnits);
         tx.add(addPriorityFee);
@@ -661,7 +826,7 @@ export class MarketplaceService {
           const addPriorityFee = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 });
 
           const tx = await this.marketplace.methods
-            .listTokens(new anchor.BN(availableHydrogen), new anchor.BN(1)) //todo add amount of kg from canister + oracle price per kg
+            .listTokens(new anchor.BN(availableHydrogen), new anchor.BN(1)) //todo price per kg from producer
             .accounts({
               listing: listingPda,
               producerAuthority: producerAuthority.publicKey,
@@ -675,6 +840,12 @@ export class MarketplaceService {
             })
             .signers([producerAuthority])
             .transaction();
+
+          const blockhash = await this.provider.connection.getLatestBlockhash('confirmed');
+          const blockheight =  blockhash.lastValidBlockHeight;
+  
+          tx.recentBlockhash = blockhash.blockhash;
+          tx.lastValidBlockHeight = blockheight;
 
           tx.add(modifyComputeUnits);
           tx.add(addPriorityFee);
