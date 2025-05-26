@@ -1,82 +1,101 @@
 
-  
-### H2-U-Marketplace
+## 💼 H2-U Marketplace
 
 A scalable NestJS backend for the Hydrogen Marketplace, managing hydrogen canister listings on Solana.
 
-### Description
+---
 
-This backend powers the Hydrogen Marketplace, integrating with Solana smart contracts to manage hydrogen canister listings. Built with NestJS, it uses Prisma ORM for database operations, Privy for user authentication, and JWT guards for secure API endpoints. The MarketplaceService handles core functionality, ensuring a dynamic marketplace by fetching and registering hydrogen batches.
+### 📘 Description
 
+This backend powers the Hydrogen Marketplace by integrating with Solana smart contracts to handle hydrogen canister listings. It's built with:
 
-### Flow Explanation
-The [MarketplaceService](src/modules/marketplace/marketplace.service.ts) manages hydrogen canister listings by fetching existing listings and registering new batches when necessary. Below is a step-by-step breakdown of the process:
+* **NestJS** – robust server-side framework
+* **Prisma ORM** – type-safe and performant database operations
+* **Privy** – decentralized identity and authentication
+* **JWT Guards** – secure access to API endpoints
 
-#### 1. Fetch Listings (getListings)
+At the heart of this system is the `MarketplaceService`, which automates the lifecycle of hydrogen batches — from generation and registration to listing and purchase.
 
-Action: Calls marketplace.account.listing.all() to retrieve all existing listings.
-Condition: If fewer than 8 listings are found, generates mock IoT data and calls registerBatch to create new listings.
-Outcome: Ensures a minimum number of listings for the frontend, simulating a dynamic marketplace.
+---
 
-#### 2. Register Batch (registerBatch)
-This method handles the creation of new listings, ensuring all required accounts are initialized properly:
+### 🔁 Flow Overview
 
-```
-* Check Admin Wallet Balance: Ensures the admin wallet has at least 0.5 SOL.
-* Initialize Producer (Once): Checks if the producer account exists; if not, initializes it using initProducer.
-* Initialize Market Config (Once): Checks if the market config exists; if not, initializes it using initMarketConfig.
-* Initialize EAC (Unique per Batch): Creates a unique EAC for each batch using the batch ID.
-* Initialize H2 Canister (Unique per Batch): Creates a unique H2 canister for each batch.
-* Register Batch (producerRegisterBatch): Mints H2 tokens representing kilograms of hydrogen.
-* List Tokens (listTokens): Transfers H2 tokens to the transfer manager(a temp buffer between canister and buyer) and creates a listing.
-```
+#### 1. 🧾 Fetch Listings (`getListings`)
 
-#### 3. Place Bid (placeBid/sellTokens)
+* **Purpose**: Retrieve all existing hydrogen listings.
+* **Logic**:
 
-The placeBid method (implemented as sellTokens in the code) allows a buyer to purchase hydrogen tokens from an existing listing. It facilitates the transfer of H2 tokens and USDC payments on the Solana blockchain:
+  * Calls `marketplace.account.listing.all()`.
+  * If fewer than 8 listings exist, it:
 
-###### Input Validation:
-Ensures the bid amount (in kilograms) and offered price (in USDC per kg) are positive.
-Validates the offered price against an oracle’s price range (minPricePerKg to maxPricePerKg) using OracleService.
+    * Simulates IoT sensor data,
+    * Calls `registerBatch()` to create new listings.
+* **Goal**: Maintain a dynamic and populated marketplace.
 
-###### Account Setup:
+#### 2. 🧪 Register New Batch (`registerBatch`)
 
-Fetches the listing and associated H2 canister to verify their existence.
-Derives program-derived addresses (PDAs) for the market config and transfer manager.
-Creates or retrieves associated token accounts (ATAs) for the buyer (H2 tokens and USDC) and producer (USDC).
+* **Sequence**:
 
-###### Balance Check:
+  ```
+  • Verify admin wallet has ≥ 0.5 SOL
+  • Initialize producer (once per admin)
+  • Initialize market config (once)
+  • Create unique EAC (Environmental Attribute Certificate) using batch ID
+  • Mint H2 canister token (one per batch)
+  • Register batch with hydrogen amount (kg) using `producerRegisterBatch`
+  • List tokens for sale using a transfer manager buffer
+  ```
 
-Verifies the buyer’s USDC balance is sufficient to cover the total payment (amount × offered price, adjusted for USDC’s 6 decimals).
+* **Outcome**: Mints H2 tokens and creates tradable listings representing hydrogen availability.
 
-###### Transaction Execution:
+#### 3. 📥 Place Bid (`sellTokens`)
 
-Constructs a sellTokens transaction using the Marketplace program, specifying:
+Allows buyers to purchase hydrogen from existing listings using USDC.
 
-```
-Buyer and producer public keys.
-Transfer manager and listing accounts.
-Token and USDC ATAs for both parties.
-Amount (in kg) and price (in USDC/kg) as 64-bit integers.
-Signs and sends the transaction, confirming it on the Solana devnet.
-```
+* **Input Validation**:
 
-###### Post-Transaction:
+  * Amount (kg) and price (USDC/kg) must be positive.
+  * Price is validated against oracle values.
 
-Fetches the updated listing and canister state.
-Retrieves the EAC mint address and listing creation date (via transaction signatures or current date as fallback).
-Returns a Listing object with updated details, including the public key, canister, price, amount left, and batch metadata.
+* **Account Preparation**:
 
-###### Outcome: 
-Transfers H2 tokens to the buyer’s ATA, USDC to the producer’s ATA, and updates the listing’s available amount, enabling secure and transparent hydrogen trading.
+  * Retrieve listing and H2 canister.
+  * Derive PDAs for config and transfer manager.
+  * Fetch/create associated token accounts (ATAs) for H2 and USDC (both buyer and producer).
 
-#### 4. Smart Contract Interactions
+* **Balance Check**:
 
-Hydrogen Program: Manages producers and canisters.
-Marketplace Program: Manages listings and token sales.
+  * Confirms buyer has sufficient USDC to cover total price.
 
-### Key Points
+* **Transaction Execution**:
 
-Uniqueness: Each EAC and H2 canister is unique per batch, derived from the batch ID.
-One-Time Initialization: Producer and market config are initialized only once.
-Dynamic Marketplace: Ensures a minimum of 8 listings by registering new batches as needed.
+  ```
+  • Constructs and sends a `sellTokens` transaction on Solana devnet.
+  • Transfers: H2 → buyer, USDC → producer.
+  • Updates listing state.
+  ```
+
+* **Result**: Updates the listing with:
+
+  * Amount left,
+  * Updated price,
+  * Timestamp,
+  * EAC mint info.
+
+#### 4. ⚙️ Smart Contract Roles
+
+| Program            | Role                            |
+| ------------------ | ------------------------------- |
+| `Hydrogen Program` | Manages producers and canisters |
+| `Marketplace`      | Handles listings and bidding    |
+
+---
+
+### 🧩 Key Features
+
+* **One-Time Initialization**: Producer & market config are initialized only once.
+* **Batch Uniqueness**: Each listing ties to a unique H2 canister and EAC via batch ID.
+* **Dynamic Listing**: Marketplace always maintains at least 8 active listings.
+* **Secure Trading**: Uses Solana PDAs and strict input checks for safe transactions.
+* **Decentralized Auth**: Privy integration for user management and session validation.
+
